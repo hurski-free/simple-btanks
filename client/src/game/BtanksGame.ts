@@ -18,6 +18,9 @@ import { WORLD_H, WORLD_W } from './world'
 
 export const BTANKS_SHELL_HIT_RADIUS = 3.2
 
+/** Who fired the shell in online PvP (`host` / `guest` are the same on both clients). */
+export type BtanksShellOwner = 'host' | 'guest'
+
 export type BtanksShell = {
   x: number
   y: number
@@ -26,6 +29,9 @@ export type BtanksShell = {
   damage: number
   bornMs: number
   lifetimeMs: number
+  /** Multiplayer: stable id for sync and removal. */
+  shotId?: string
+  firedBy?: BtanksShellOwner
 }
 
 export type TrackStampAnchor = { x: number; y: number; a: number }
@@ -126,6 +132,22 @@ export abstract class BtanksGame {
 
   /** Hint text, HUD, etc. World-space coordinates; `fontPx` matches solo scaling. */
   protected abstract drawUiOverlays(nowMs: number, fontPx: number): void
+
+  /** Optional multiplayer metadata on spawned shells (shot id, owner). Solo: no-op. */
+  protected enrichShellMetadata(_shell: BtanksShell, _tank: Tank, _nowMs: number): void {
+    void _shell
+    void _tank
+    void _nowMs
+  }
+
+  /**
+   * PvP: remove a shell that hit a tank. Default: never. Implement victim + shooter cosmetic removal online.
+   */
+  protected consumeShellIfHitTank(_shell: BtanksShell, _nowMs: number): boolean {
+    void _shell
+    void _nowMs
+    return false
+  }
 
   protected setupResize(): void {
     const ro = new ResizeObserver(() => this.fitCanvas())
@@ -273,7 +295,7 @@ export abstract class BtanksGame {
     if (!shot) return
 
     const muzzle = tank.muzzleWorld()
-    this.shells.push({
+    const shell: BtanksShell = {
       x: muzzle.x,
       y: muzzle.y,
       vx: shot.vx,
@@ -281,7 +303,9 @@ export abstract class BtanksGame {
       damage: shot.damage,
       bornMs: nowMs,
       lifetimeMs: tank.config.shellLifetimeMs,
-    })
+    }
+    this.enrichShellMetadata(shell, tank, nowMs)
+    this.shells.push(shell)
     const dmg = shot.damage
     const bh = tank.hullAngle
     const backX = -Math.cos(bh)
@@ -347,6 +371,11 @@ export abstract class BtanksGame {
         }
       }
       if (hitObstacle) {
+        this.shells.splice(i, 1)
+        continue
+      }
+
+      if (this.consumeShellIfHitTank(s, nowMs)) {
         this.shells.splice(i, 1)
         continue
       }

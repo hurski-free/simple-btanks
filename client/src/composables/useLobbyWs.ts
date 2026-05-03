@@ -1,15 +1,10 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { GAME_WS_CHANNEL } from '../game/const'
+import { isMpGamePayload } from '../game/mp/signalTypes'
 import { DEFAULT_MAP_PRESET_ID, type MapPresetId } from '../game/presets/MapPresets'
 import { DEFAULT_TANK_PRESET_ID, type TankPresetId } from '../game/presets/TankPresets'
 import type { ClientMessage, ServerMessage } from '../protocol'
 import { parseServerMessage, wsUrl } from '../protocol'
-
-function isGameStartPayload(p: unknown): boolean {
-  if (!p || typeof p !== 'object' || Array.isArray(p)) return false
-  const o = p as Record<string, unknown>
-  return o.channel === GAME_WS_CHANNEL && o.kind === 'game-start'
-}
 
 export type RoomListItem = { roomId: string; displayName: string; hasPassword: boolean }
 
@@ -74,8 +69,108 @@ export function useLobbyWs() {
   const joinTarget = ref<RoomListItem | null>(null)
   const joinPassword = ref('')
 
+  const mpLobbyMapId = ref<MapPresetId>(DEFAULT_MAP_PRESET_ID)
+  const mpLobbyTankId = ref<TankPresetId>(DEFAULT_TANK_PRESET_ID)
+  const mpSelfReady = ref(false)
+  const mpPeerPrep = ref<{ mapPresetId: MapPresetId; tankPresetId: TankPresetId } | null>(null)
+  const mpCountdownEndsAt = ref<number | null>(null)
+  const mpCountdownSeconds = ref<number | null>(null)
+  const mpMatchConfig = ref<{
+    mapPresetId: MapPresetId
+    hostTankPresetId: TankPresetId
+    guestTankPresetId: TankPresetId
+  } | null>(null)
+
+  let mpFightTimer: ReturnType<typeof setTimeout> | null = null
+  const mpScheduleSent = ref(false)
+  let mpCountdownUiTimer: ReturnType<typeof setInterval> | null = null
+
   let ws: WebSocket | null = null
   let listTimer: ReturnType<typeof setInterval> | null = null
+
+  function clearMpFightTimer(): void {
+    if (mpFightTimer) {
+      clearTimeout(mpFightTimer)
+      mpFightTimer = null
+    }
+  }
+
+  function clearMpCountdownUi(): void {
+    if (mpCountdownUiTimer) {
+      clearInterval(mpCountdownUiTimer)
+      mpCountdownUiTimer = null
+    }
+  }
+
+  function resetMpPrep(): void {
+    clearMpFightTimer()
+    clearMpCountdownUi()
+    mpSelfReady.value = false
+    mpPeerPrep.value = null
+    mpCountdownEndsAt.value = null
+    mpCountdownSeconds.value = null
+    mpMatchConfig.value = null
+    mpScheduleSent.value = false
+  }
+
+  function startCountdownUi(): void {
+    clearMpCountdownUi()
+    const tick = (): void => {
+      const end = mpCountdownEndsAt.value
+      if (end == null) {
+        mpCountdownSeconds.value = null
+        return
+      }
+      mpCountdownSeconds.value = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+    }
+    tick()
+    mpCountdownUiTimer = setInterval(tick, 250)
+  }
+
+  function armFightTimer(startAtMs: number): void {
+    clearMpFightTimer()
+    const delay = Math.max(0, startAtMs - Date.now())
+    mpFightTimer = setTimeout(() => {
+      mpFightTimer = null
+      beginFight()
+    }, delay)
+  }
+
+  function beginFight(): void {
+    clearMpCountdownUi()
+    mpCountdownEndsAt.value = null
+    mpCountdownSeconds.value = null
+    if (!mpMatchConfig.value) return
+    gameSessionId.value += 1
+    multiplayerActive.value = true
+  }
+
+  function tryHostSchedule(): void {
+    if (!isHost.value || !mpSelfReady.value || !mpPeerPrep.value || mpScheduleSent.value) return
+    if (mpPeerPrep.value.mapPresetId !== mpLobbyMapId.value) return
+
+    mpScheduleSent.value = true
+    const startAtMs = Date.now() + 5000
+    mpMatchConfig.value = {
+      mapPresetId: mpLobbyMapId.value,
+      hostTankPresetId: mpLobbyTankId.value,
+      guestTankPresetId: mpPeerPrep.value.tankPresetId,
+    }
+    mpCountdownEndsAt.value = startAtMs
+    send({
+      type: 'signal',
+      payload: {
+        channel: GAME_WS_CHANNEL,
+        kind: 'mp-schedule',
+        startAtMs,
+        mapPresetId: mpLobbyMapId.value,
+        hostTankPresetId: mpLobbyTankId.value,
+        guestTankPresetId: mpPeerPrep.value.tankPresetId,
+      },
+    })
+    armFightTimer(startAtMs)
+    startCountdownUi()
+  }
 
   function stopListPolling(): void {
     if (listTimer) {
@@ -178,6 +273,7 @@ export function useLobbyWs() {
         currentRoomTitle.value = msg.displayName
         peerNickname.value = null
         stopListPolling()
+        resetMpPrep()
         break
       case 'joined-room':
         inRoom.value = true
@@ -186,6 +282,7 @@ export function useLobbyWs() {
         currentRoomTitle.value = msg.displayName
         peerNickname.value = msg.hostUsername
         stopListPolling()
+        resetMpPrep()
         break
       case 'peer-joined':
         peerNickname.value = msg.peerUsername
@@ -193,11 +290,39 @@ export function useLobbyWs() {
       case 'peer-left':
         peerNickname.value = null
         multiplayerActive.value = false
+        resetMpPrep()
         break
       case 'signal': {
-        if (isGameStartPayload(msg.payload) && !isHost.value) {
-          gameSessionId.value += 1
-          multiplayerActive.value = true
+        const p = msg.payload
+        if (isMpGamePayload(p)) {
+          if (p.kind === 'mp-prep') {
+            mpPeerPrep.value = { mapPresetId: p.mapPresetId, tankPresetId: p.tankPresetId }
+            if (!isHost.value && mpSelfReady.value && p.mapPresetId !== mpLobbyMapId.value) {
+              mpSelfReady.value = false
+              actionError.value = 'Same map as the host is required. Match the map, then Ready again.'
+            }
+            if (isHost.value && mpSelfReady.value && p.mapPresetId !== mpLobbyMapId.value) {
+              send({
+                type: 'signal',
+                payload: { channel: GAME_WS_CHANNEL, kind: 'mp-prep-mismatch' },
+              })
+              actionError.value = 'Both players must pick the same map.'
+            } else {
+              tryHostSchedule()
+            }
+          } else if (p.kind === 'mp-schedule' && !isHost.value) {
+            mpMatchConfig.value = {
+              mapPresetId: p.mapPresetId,
+              hostTankPresetId: p.hostTankPresetId,
+              guestTankPresetId: p.guestTankPresetId,
+            }
+            mpCountdownEndsAt.value = p.startAtMs
+            armFightTimer(p.startAtMs)
+            startCountdownUi()
+          } else if (p.kind === 'mp-prep-mismatch' && !isHost.value) {
+            actionError.value = 'Same map required. Match the host map and tap Ready again.'
+            mpSelfReady.value = false
+          }
         }
         signalSeq += 1
         peerSignal.value = { seq: signalSeq, payload: msg.payload }
@@ -264,6 +389,7 @@ export function useLobbyWs() {
     peerNickname.value = null
     multiplayerActive.value = false
     peerSignal.value = null
+    resetMpPrep()
     send({ type: 'list-rooms' })
     startListPolling()
   }
@@ -343,11 +469,33 @@ export function useLobbyWs() {
     soloMode.value = false
   }
 
-  function startMultiplayerGame(): void {
-    if (!isHost.value || peerNickname.value === null) return
-    gameSessionId.value += 1
-    multiplayerActive.value = true
-    sendPeerSignal({ channel: GAME_WS_CHANNEL, kind: 'game-start' })
+  function confirmMpReady(): void {
+    if (!inRoom.value || peerNickname.value === null) {
+      actionError.value = 'Wait for a guest to join.'
+      return
+    }
+    actionError.value = null
+    mpSelfReady.value = true
+    send({
+      type: 'signal',
+      payload: {
+        channel: GAME_WS_CHANNEL,
+        kind: 'mp-prep',
+        mapPresetId: mpLobbyMapId.value,
+        tankPresetId: mpLobbyTankId.value,
+      },
+    })
+    tryHostSchedule()
+  }
+
+  function cancelMpReady(): void {
+    mpSelfReady.value = false
+    clearMpFightTimer()
+    clearMpCountdownUi()
+    mpCountdownEndsAt.value = null
+    mpCountdownSeconds.value = null
+    mpScheduleSent.value = false
+    mpMatchConfig.value = null
   }
 
   function sendChatMessage(text: string): void {
@@ -363,7 +511,9 @@ export function useLobbyWs() {
 
   const gameActive = computed(() => soloMode.value || multiplayerActive.value)
 
-  const canStartMultiplayer = computed(() => isHost.value && peerNickname.value !== null)
+  const canMpReady = computed(() => inRoom.value && peerNickname.value !== null && !mpSelfReady.value)
+
+  const mpPrepUiLocked = computed(() => mpScheduleSent.value || mpCountdownEndsAt.value !== null)
 
   watch(nicknameSet, (set) => {
     if (!set && ws) {
@@ -371,6 +521,7 @@ export function useLobbyWs() {
       soloMode.value = false
       multiplayerActive.value = false
       peerSignal.value = null
+      resetMpPrep()
       chatMessages.value = []
       chatCooldownUntil.value = 0
       chatCooldownSeconds.value = 0
@@ -385,6 +536,8 @@ export function useLobbyWs() {
   onBeforeUnmount(() => {
     stopListPolling()
     stopChatCooldownTimer()
+    clearMpFightTimer()
+    clearMpCountdownUi()
     ws?.close()
   })
 
@@ -414,7 +567,16 @@ export function useLobbyWs() {
     gameActive,
     gameSessionId,
     peerSignal,
-    canStartMultiplayer,
+    canMpReady,
+    mpLobbyMapId,
+    mpLobbyTankId,
+    mpSelfReady,
+    mpPeerPrep,
+    mpCountdownSeconds,
+    mpMatchConfig,
+    mpPrepUiLocked,
+    confirmMpReady,
+    cancelMpReady,
     joinTarget,
     joinPassword,
     confirmNickname,
@@ -429,6 +591,5 @@ export function useLobbyWs() {
     cancelSoloGameDialog,
     confirmSoloGameDialog,
     leaveSoloGame,
-    startMultiplayerGame,
   })
 }

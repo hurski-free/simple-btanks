@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
 import { MultiplayerGame } from '../../game/MultiplayerGame'
-import { DEFAULT_MAP_PRESET_ID } from '../../game/presets/MapPresets'
+import type { MapPresetId } from '../../game/presets/MapPresets'
+import type { TankPresetId } from '../../game/presets/TankPresets'
 
 const props = defineProps<{
   gameSessionId: number
   isHost: boolean
+  match: {
+    mapPresetId: MapPresetId
+    hostTankPresetId: TankPresetId
+    guestTankPresetId: TankPresetId
+  } | null
+  peerSignal: { seq: number; payload: unknown } | null
+  sendGameSignal: (payload: unknown) => void
 }>()
 
 const canvasRef = shallowRef<HTMLCanvasElement | null>(null)
@@ -13,19 +21,37 @@ const engine = shallowRef<MultiplayerGame | null>(null)
 
 function mountEngine(): void {
   const el = canvasRef.value
-  if (!el) return
+  const m = props.match
+  if (!el || !m) return
   engine.value?.destroy()
-  const g = new MultiplayerGame(el, DEFAULT_MAP_PRESET_ID)
+  const g = new MultiplayerGame(el, {
+    isHost: props.isHost,
+    mapPresetId: m.mapPresetId,
+    hostTankPresetId: m.hostTankPresetId,
+    guestTankPresetId: m.guestTankPresetId,
+    sendSignal: props.sendGameSignal,
+  })
   g.start()
   engine.value = g
 }
 
 watch(
-  () => props.gameSessionId,
+  () => [props.gameSessionId, props.match?.mapPresetId, props.match?.hostTankPresetId, props.match?.guestTankPresetId],
   () => {
     void nextTick(mountEngine)
   },
   { flush: 'post' },
+)
+
+watch(
+  () => props.peerSignal?.seq,
+  () => {
+    const sig = props.peerSignal
+    const eng = engine.value
+    if (sig && eng) {
+      eng.onPeerPayload(sig.payload)
+    }
+  },
 )
 
 onMounted(() => {

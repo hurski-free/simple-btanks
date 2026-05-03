@@ -66,14 +66,21 @@ function confirmLeaveRoom(): void {
 
       <RoomLobbyPanel
         v-else
+        v-model:map-id="lobby.mpLobbyMapId"
+        v-model:tank-id="lobby.mpLobbyTankId"
         :is-host="lobby.isHost"
         :peer-nickname="lobby.peerNickname"
         :current-room-title="lobby.currentRoomTitle"
         :current-room-id="lobby.currentRoomId"
         :has-peer="lobby.hasPeer"
-        :can-start-multiplayer="lobby.canStartMultiplayer"
+        :can-mp-ready="lobby.canMpReady"
+        :self-ready="lobby.mpSelfReady"
+        :peer-prep="lobby.mpPeerPrep"
+        :countdown-seconds="lobby.mpCountdownSeconds"
+        :schedule-locked="lobby.mpPrepUiLocked"
         @leave="requestLeaveRoom"
-        @start-multiplayer="lobby.startMultiplayerGame"
+        @mp-ready="lobby.confirmMpReady"
+        @mp-cancel-ready="lobby.cancelMpReady"
       />
     </main>
 
@@ -91,7 +98,14 @@ function confirmLeaveRoom(): void {
         :map-preset-id="lobby.soloMapPresetId"
         :tank-preset="lobby.soloTankPresetId"
       />
-      <MultiplayerGame v-else :game-session-id="lobby.gameSessionId" :is-host="lobby.isHost" />
+      <MultiplayerGame
+        v-else
+        :game-session-id="lobby.gameSessionId"
+        :is-host="lobby.isHost"
+        :match="lobby.mpMatchConfig"
+        :peer-signal="lobby.peerSignal"
+        :send-game-signal="lobby.sendPeerSignal"
+      />
     </div>
 
     <SoloGameDialog
