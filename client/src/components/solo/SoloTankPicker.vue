@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Tank } from '../game/objects/Tank'
+import { Tank } from '../../game/objects/Tank'
 import {
   DEFAULT_TANK_PRESET_ID,
   getTankPreset,
   TANK_PRESET_LABELS,
   TANK_PRESET_ORDER,
   type TankPresetId,
-} from '../game/presets/TankPresets'
+} from '../../game/presets/TankPresets'
 
 const tankId = defineModel<TankPresetId>('tankId', { default: DEFAULT_TANK_PRESET_ID })
 

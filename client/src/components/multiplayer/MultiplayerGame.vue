@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
-import { MultiplayerGame } from '../game/MultiplayerGame'
+import { MultiplayerGame } from '../../game/MultiplayerGame'
 
 const props = defineProps<{
   gameSessionId: number

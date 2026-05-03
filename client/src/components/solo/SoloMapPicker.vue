@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { buildMapObstacles } from '../game/mapObstacles'
-import { DEFAULT_MAP_PRESET_ID, getMapPreset, MAP_PRESET_IDS, type MapPresetId } from '../game/presets/MapPresets'
-import { WORLD_H, WORLD_W } from '../game/world'
+import { buildMapObstacles } from '../../game/mapObstacles'
+import { DEFAULT_MAP_PRESET_ID, getMapPreset, MAP_PRESET_IDS, type MapPresetId } from '../../game/presets/MapPresets'
+import { WORLD_H, WORLD_W } from '../../game/world'
 
 const mapId = defineModel<MapPresetId>('mapId', { default: DEFAULT_MAP_PRESET_ID })
 

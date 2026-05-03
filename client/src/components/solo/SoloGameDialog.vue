@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { DEFAULT_MAP_PRESET_ID, type MapPresetId } from '../game/presets/MapPresets'
-import { DEFAULT_TANK_PRESET_ID, type TankPresetId } from '../game/presets/TankPresets'
+import { DEFAULT_MAP_PRESET_ID, type MapPresetId } from '../../game/presets/MapPresets'
+import { DEFAULT_TANK_PRESET_ID, type TankPresetId } from '../../game/presets/TankPresets'
 import SoloMapPicker from './SoloMapPicker.vue'
 import SoloTankPicker from './SoloTankPicker.vue'
 
