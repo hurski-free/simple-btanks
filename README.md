@@ -1,6 +1,6 @@
 # Simple battle tanks
 
-Co-op arcade game: defend the planet from asteroids.
+1v1 mini battle
 
 ## Deploy
 
