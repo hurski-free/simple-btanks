@@ -1,4 +1,4 @@
-# Space Defend
+# Simple battle tanks
 
 Co-op arcade game: defend the planet from asteroids.
 
