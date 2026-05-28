@@ -18,17 +18,20 @@ export class SoloGame extends BtanksGame {
   private readonly tank: Tank
   private readonly botTank: Tank
   private readonly keysBound = new Set<string>()
+  private aimPointerActive = false
+  private aimWorldX = 0
+  private aimWorldY = 0
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (!this.canvas.isConnected) return
+    if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) return
     this.tank.setKey(e.code, true)
     this.keysBound.add(e.code)
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyT', 'Space'].includes(e.code)) {
-      e.preventDefault()
-    }
+    e.preventDefault()
   }
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
+    if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) return
     this.tank.setKey(e.code, false)
     this.keysBound.delete(e.code)
   }
@@ -38,6 +41,27 @@ export class SoloGame extends BtanksGame {
       this.tank.setKey(code, false)
     }
     this.keysBound.clear()
+    this.aimPointerActive = false
+  }
+
+  private readonly onMouseMove = (e: MouseEvent): void => {
+    this.updateAimFromClientPoint(e.clientX, e.clientY)
+  }
+
+  private readonly onMouseLeave = (): void => {
+    this.aimPointerActive = false
+  }
+
+  private readonly onMouseDown = (e: MouseEvent): void => {
+    if (e.button !== 0) return
+    if (!this.isClientPointOverCanvas(e.clientX, e.clientY)) return
+    this.tank.setFiring(true)
+    e.preventDefault()
+  }
+
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    if (e.button !== 0) return
+    this.tank.setFiring(false)
   }
 
   constructor(
@@ -63,12 +87,20 @@ export class SoloGame extends BtanksGame {
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
     window.addEventListener('blur', this.onBlur)
+    window.addEventListener('mousemove', this.onMouseMove)
+    window.addEventListener('mousedown', this.onMouseDown)
+    window.addEventListener('mouseup', this.onMouseUp)
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave)
   }
 
   private unbindInput(): void {
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
+    window.removeEventListener('mousemove', this.onMouseMove)
+    window.removeEventListener('mousedown', this.onMouseDown)
+    window.removeEventListener('mouseup', this.onMouseUp)
+    this.canvas.removeEventListener('mouseleave', this.onMouseLeave)
     this.onBlur()
   }
 
@@ -110,13 +142,14 @@ export class SoloGame extends BtanksGame {
     this.maybeStampTrackMarks(this.tank)
     this.maybeStampTrackMarks(this.botTank)
     this.updateExhaustSmoke([this.tank, this.botTank], dtSec)
+    this.applyMouseAim(this.tank, dtSec)
     this.processTankFire(this.tank, nowMs)
     this.processTankFire(this.botTank, nowMs)
   }
 
   protected drawTanks(ctx: CanvasRenderingContext2D, _nowMs: number): void {
-    if (this.botTank.hitPoints > 0) this.botTank.draw(ctx)
-    if (this.tank.hitPoints > 0) this.tank.draw(ctx)
+    this.botTank.draw(ctx)
+    this.tank.draw(ctx)
   }
 
   protected enrichShellMetadata(shell: BtanksShell, tank: Tank, _nowMs: number): void {
@@ -137,9 +170,7 @@ export class SoloGame extends BtanksGame {
       victim.setKey('KeyS', false)
       victim.setKey('KeyA', false)
       victim.setKey('KeyD', false)
-      victim.setKey('KeyQ', false)
-      victim.setKey('KeyE', false)
-      victim.setKey('KeyT', false)
+      victim.setFiring(false)
     }
     return true
   }
@@ -150,7 +181,7 @@ export class SoloGame extends BtanksGame {
 
     ctx.fillStyle = 'rgba(232, 234, 238, 0.55)'
     ctx.font = `${fontPx}px system-ui, sans-serif`
-    const hint = 'WASD — hull  ·  QE — turret  ·  T — fire'
+    const hint = 'WASD — hull  ·  Mouse — turret  ·  LMB — fire'
     ctx.textAlign = 'left'
     ctx.fillText(hint, 12, h - 12)
 
@@ -218,7 +249,7 @@ export class SoloGame extends BtanksGame {
       this.botTank.setKey('KeyS', false)
       this.botTank.setKey('KeyA', false)
       this.botTank.setKey('KeyD', false)
-      this.botTank.setKey('KeyT', false)
+      this.botTank.setFiring(false)
       return
     }
 
@@ -248,7 +279,7 @@ export class SoloGame extends BtanksGame {
     const alignedForShot = Math.abs(deltaHull) < 0.22
     const inRange = dist < 560
     const firePulse = Math.floor(nowMs / 110) % 2 === 0
-    this.botTank.setKey('KeyT', alignedForShot && inRange && firePulse)
+    this.botTank.setFiring(alignedForShot && inRange && firePulse)
   }
 
   private computeObstacleAvoidanceSteer(bot: Tank, desiredAngle: number): number {
@@ -281,5 +312,46 @@ export class SoloGame extends BtanksGame {
     const desiredDelta = Math.atan2(Math.sin(desiredAngle - bot.hullAngle), Math.cos(desiredAngle - bot.hullAngle))
     const maxSteer = Math.abs(desiredDelta) > 1.15 ? 0.58 : 0.82
     return Math.max(-maxSteer, Math.min(maxSteer, steer))
+  }
+
+  private updateAimFromClientPoint(clientX: number, clientY: number): void {
+    const rect = this.canvas.getBoundingClientRect()
+    if (rect.width <= 1 || rect.height <= 1) {
+      this.aimPointerActive = false
+      return
+    }
+    const lx = clientX - rect.left
+    const ly = clientY - rect.top
+    if (lx < 0 || ly < 0 || lx > rect.width || ly > rect.height) {
+      this.aimPointerActive = false
+      return
+    }
+    const s = Math.max(1e-6, this.worldScale)
+    this.aimWorldX = lx / s
+    this.aimWorldY = ly / s
+    this.aimPointerActive = true
+  }
+
+  private isClientPointOverCanvas(clientX: number, clientY: number): boolean {
+    const rect = this.canvas.getBoundingClientRect()
+    if (rect.width <= 1 || rect.height <= 1) return false
+    const lx = clientX - rect.left
+    const ly = clientY - rect.top
+    return lx >= 0 && ly >= 0 && lx <= rect.width && ly <= rect.height
+  }
+
+  private applyMouseAim(tank: Tank, dtSec: number): void {
+    if (!this.aimPointerActive) return
+    const dx = this.aimWorldX - tank.x
+    const dy = this.aimWorldY - tank.y
+    if (dx * dx + dy * dy < 1e-6) return
+    const desiredRel = Math.atan2(Math.sin(Math.atan2(dy, dx) - tank.hullAngle), Math.cos(Math.atan2(dy, dx) - tank.hullAngle))
+    const delta = Math.atan2(Math.sin(desiredRel - tank.turretAngle), Math.cos(desiredRel - tank.turretAngle))
+    const maxStep = Math.max(0, tank.config.turretTurnSpeed * dtSec)
+    if (Math.abs(delta) <= maxStep || maxStep <= 0) {
+      tank.turretAngle = desiredRel
+      return
+    }
+    tank.turretAngle += Math.sign(delta) * maxStep
   }
 }

@@ -98,5 +98,6 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   border: 1px solid var(--border);
   background: #0a0c08;
+  cursor: crosshair;
 }
 </style>

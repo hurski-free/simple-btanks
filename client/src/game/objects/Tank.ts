@@ -8,9 +8,6 @@ const KEY_W = 'KeyW'
 const KEY_S = 'KeyS'
 const KEY_A = 'KeyA'
 const KEY_D = 'KeyD'
-const KEY_Q = 'KeyQ'
-const KEY_E = 'KeyE'
-const KEY_T = 'KeyT'
 
 export class Tank {
   readonly config: ITankConfig
@@ -24,6 +21,7 @@ export class Tank {
   forwardSpeed = 0
   hitPoints: number
   private readonly keys = new Set<string>()
+  private fireHeld = false
   private lastFireMs = 0
   /** Scrolls tread stripe pattern along track length (world units, same as `forwardSpeed` integration). */
   private treadScroll = 0
@@ -77,6 +75,10 @@ export class Tank {
     else this.keys.delete(code)
   }
 
+  setFiring(down: boolean): void {
+    this.fireHeld = down
+  }
+
   /** 0 at shot moment, ramps to 1 when `fireCooldownMs` has elapsed (ready to fire). */
   gunReloadProgress(nowMs: number): number {
     const cd = this.config.fireCooldownMs
@@ -85,7 +87,7 @@ export class Tank {
   }
 
   tryFire(nowMs: number): { damage: number; speed: number; vx: number; vy: number } | null {
-    if (!this.keys.has(KEY_T)) return null
+    if (!this.fireHeld) return null
     if (nowMs - this.lastFireMs < this.config.fireCooldownMs) return null
     this.lastFireMs = nowMs
     const dir = this.barrelWorldDir()
@@ -143,9 +145,6 @@ export class Tank {
 
     if (this.keys.has(KEY_A)) this.hullAngle -= c.hullTurnSpeed * dtSec
     if (this.keys.has(KEY_D)) this.hullAngle += c.hullTurnSpeed * dtSec
-    if (this.keys.has(KEY_Q)) this.turretAngle -= c.turretTurnSpeed * dtSec
-    if (this.keys.has(KEY_E)) this.turretAngle += c.turretTurnSpeed * dtSec
-
     let accel = 0
     if (this.keys.has(KEY_W)) accel += c.forwardAccel
     if (this.keys.has(KEY_S)) accel -= c.backwardAccel
@@ -241,6 +240,10 @@ export class Tank {
   draw(ctx: CanvasRenderingContext2D): void {
     const m = this.config.model
     ctx.save()
+    if (this.hitPoints <= 0) {
+      ctx.filter = 'grayscale(1)'
+      ctx.globalAlpha = 0.82
+    }
     ctx.translate(this.x, this.y)
     ctx.rotate(this.hullAngle)
 

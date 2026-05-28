@@ -28,20 +28,23 @@ export class MultiplayerGame extends BtanksGame {
   private readonly remotePredictor: RemoteTankPredictor | RemoteTankInterpolator
 
   private readonly keysBound = new Set<string>()
+  private aimPointerActive = false
+  private aimWorldX = 0
+  private aimWorldY = 0
   private stateSeq = 0
   private remoteStateSeq = -1
   private syncTimer: ReturnType<typeof setInterval> | null = null
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (!this.canvas.isConnected) return
+    if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) return
     this.localTank.setKey(e.code, true)
     this.keysBound.add(e.code)
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyT', 'Space'].includes(e.code)) {
-      e.preventDefault()
-    }
+    e.preventDefault()
   }
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
+    if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space'].includes(e.code)) return
     this.localTank.setKey(e.code, false)
     this.keysBound.delete(e.code)
   }
@@ -51,6 +54,28 @@ export class MultiplayerGame extends BtanksGame {
       this.localTank.setKey(code, false)
     }
     this.keysBound.clear()
+    this.localTank.setFiring(false)
+    this.aimPointerActive = false
+  }
+
+  private readonly onMouseMove = (e: MouseEvent): void => {
+    this.updateAimFromClientPoint(e.clientX, e.clientY)
+  }
+
+  private readonly onMouseLeave = (): void => {
+    this.aimPointerActive = false
+  }
+
+  private readonly onMouseDown = (e: MouseEvent): void => {
+    if (e.button !== 0) return
+    if (!this.isClientPointOverCanvas(e.clientX, e.clientY)) return
+    this.localTank.setFiring(true)
+    e.preventDefault()
+  }
+
+  private readonly onMouseUp = (e: MouseEvent): void => {
+    if (e.button !== 0) return
+    this.localTank.setFiring(false)
   }
 
   constructor(canvas: HTMLCanvasElement, options: MultiplayerGameOptions) {
@@ -223,12 +248,20 @@ export class MultiplayerGame extends BtanksGame {
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
     window.addEventListener('blur', this.onBlur)
+    window.addEventListener('mousemove', this.onMouseMove)
+    window.addEventListener('mousedown', this.onMouseDown)
+    window.addEventListener('mouseup', this.onMouseUp)
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave)
   }
 
   private unbindInput(): void {
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
+    window.removeEventListener('mousemove', this.onMouseMove)
+    window.removeEventListener('mousedown', this.onMouseDown)
+    window.removeEventListener('mouseup', this.onMouseUp)
+    this.canvas.removeEventListener('mouseleave', this.onMouseLeave)
     this.onBlur()
   }
 
@@ -267,7 +300,49 @@ export class MultiplayerGame extends BtanksGame {
     this.maybeStampTrackMarks(this.localTank)
     this.maybeStampTrackMarks(this.remoteTank)
     this.updateExhaustSmoke([this.localTank, this.remoteTank], dtSec)
+    this.applyMouseAim(this.localTank, dtSec)
     this.processTankFireWithNet(this.localTank, nowMs)
+  }
+
+  private updateAimFromClientPoint(clientX: number, clientY: number): void {
+    const rect = this.canvas.getBoundingClientRect()
+    if (rect.width <= 1 || rect.height <= 1) {
+      this.aimPointerActive = false
+      return
+    }
+    const lx = clientX - rect.left
+    const ly = clientY - rect.top
+    if (lx < 0 || ly < 0 || lx > rect.width || ly > rect.height) {
+      this.aimPointerActive = false
+      return
+    }
+    const s = Math.max(1e-6, this.worldScale)
+    this.aimWorldX = lx / s
+    this.aimWorldY = ly / s
+    this.aimPointerActive = true
+  }
+
+  private isClientPointOverCanvas(clientX: number, clientY: number): boolean {
+    const rect = this.canvas.getBoundingClientRect()
+    if (rect.width <= 1 || rect.height <= 1) return false
+    const lx = clientX - rect.left
+    const ly = clientY - rect.top
+    return lx >= 0 && ly >= 0 && lx <= rect.width && ly <= rect.height
+  }
+
+  private applyMouseAim(tank: Tank, dtSec: number): void {
+    if (!this.aimPointerActive) return
+    const dx = this.aimWorldX - tank.x
+    const dy = this.aimWorldY - tank.y
+    if (dx * dx + dy * dy < 1e-6) return
+    const desiredRel = Math.atan2(Math.sin(Math.atan2(dy, dx) - tank.hullAngle), Math.cos(Math.atan2(dy, dx) - tank.hullAngle))
+    const delta = Math.atan2(Math.sin(desiredRel - tank.turretAngle), Math.cos(desiredRel - tank.turretAngle))
+    const maxStep = Math.max(0, tank.config.turretTurnSpeed * dtSec)
+    if (Math.abs(delta) <= maxStep || maxStep <= 0) {
+      tank.turretAngle = desiredRel
+      return
+    }
+    tank.turretAngle += Math.sign(delta) * maxStep
   }
 
   private processTankFireWithNet(tank: Tank, nowMs: number): void {
@@ -333,10 +408,8 @@ export class MultiplayerGame extends BtanksGame {
 
   protected drawTanks(ctx: CanvasRenderingContext2D, nowMs: number): void {
     void nowMs
-    const lp = this.localTank.hitPoints
-    const rp = this.remoteTank.hitPoints
-    if (lp > 0) this.localTank.draw(ctx)
-    if (rp > 0) this.remoteTank.draw(ctx)
+    this.localTank.draw(ctx)
+    this.remoteTank.draw(ctx)
   }
 
   protected drawUiOverlays(nowMs: number, fontPx: number): void {
@@ -346,7 +419,7 @@ export class MultiplayerGame extends BtanksGame {
     ctx.fillStyle = 'rgba(232, 234, 238, 0.55)'
     ctx.font = `${fontPx}px system-ui, sans-serif`
     ctx.textAlign = 'left'
-    ctx.fillText('WASD — hull  ·  QE — turret  ·  T — fire', 12, h - 12)
+    ctx.fillText('WASD — hull  ·  Mouse — turret  ·  LMB — fire', 12, h - 12)
 
     this.drawMpHud(nowMs, fontPx)
 
