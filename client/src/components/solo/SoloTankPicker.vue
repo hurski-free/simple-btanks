@@ -38,7 +38,11 @@ function paintPreview(): void {
 
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   const cssW = Math.max(1, host.clientWidth)
-  const cssH = Math.min(280, Math.max(200, cssW * 0.55))
+  const viewportH = Math.max(1, window.innerHeight || 1)
+  const isCompact = cssW <= 420
+  const minH = isCompact ? 130 : 180
+  const maxH = Math.max(minH, Math.min(280, Math.round(viewportH * (isCompact ? 0.23 : 0.3))))
+  const cssH = Math.min(maxH, Math.max(minH, cssW * 0.55))
 
   canvas.style.width = `${cssW}px`
   canvas.style.height = `${cssH}px`

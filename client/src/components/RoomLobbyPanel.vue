@@ -111,4 +111,19 @@ const emit = defineEmits<{
 .game-hint.muted {
   opacity: 0.85;
 }
+
+@media (max-width: 640px) {
+  .mp-prep {
+    gap: 0.5rem;
+  }
+
+  .mp-prep :deep(.solo-picker-section) {
+    margin-bottom: 0.75rem;
+  }
+
+  .mp-prep :deep(.picker-buttons) {
+    gap: 0.4rem;
+    margin-bottom: 0.55rem;
+  }
+}
 </style>

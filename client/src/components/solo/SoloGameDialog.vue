@@ -44,6 +44,8 @@ function onConfirm(): void {
 .solo-game-dialog {
   max-width: min(640px, calc(100vw - 2rem));
   width: 100%;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
 }
 
 .solo-game-lead {
@@ -56,5 +58,21 @@ function onConfirm(): void {
 .solo-game-actions {
   justify-content: flex-end;
   margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .solo-game-dialog {
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+    padding: 1rem;
+  }
+
+  .solo-game-actions {
+    justify-content: stretch;
+  }
+
+  .solo-game-actions :deep(.btn) {
+    flex: 1 1 0;
+  }
 }
 </style>

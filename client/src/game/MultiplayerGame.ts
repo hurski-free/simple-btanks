@@ -260,6 +260,10 @@ export class MultiplayerGame extends BtanksGame {
     }
     this.clampTankInWorld(this.remoteTank)
 
+    this.resolveTankAgainstOtherTank(this.localTank, this.remoteTank)
+    this.clampTankInWorld(this.localTank)
+    this.clampTankInWorld(this.remoteTank)
+
     this.maybeStampTrackMarks(this.localTank)
     this.maybeStampTrackMarks(this.remoteTank)
     this.updateExhaustSmoke([this.localTank, this.remoteTank], dtSec)

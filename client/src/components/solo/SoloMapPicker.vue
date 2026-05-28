@@ -26,8 +26,14 @@ function paintPreview(): void {
 
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   const cssW = Math.max(1, host.clientWidth)
-  const cssH = Math.min(320, Math.max(180, Math.round(cssW * (WORLD_H / WORLD_W))))
-  const scale = cssW / WORLD_W
+  const viewportH = Math.max(1, window.innerHeight || 1)
+  const isCompact = cssW <= 420
+  const minH = isCompact ? 120 : 160
+  const maxH = Math.max(minH, Math.min(320, Math.round(viewportH * (isCompact ? 0.24 : 0.34))))
+  const cssH = Math.min(maxH, Math.max(minH, Math.round(cssW * (WORLD_H / WORLD_W))))
+  const worldScale = Math.min(cssW / WORLD_W, cssH / WORLD_H)
+  const offsetX = (cssW - WORLD_W * worldScale) * 0.5
+  const offsetY = (cssH - WORLD_H * worldScale) * 0.5
 
   canvas.style.width = `${cssW}px`
   canvas.style.height = `${cssH}px`
@@ -37,15 +43,15 @@ function paintPreview(): void {
   const nowMs = performance.now()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  const s = scale * dpr
-  ctx.setTransform(s, 0, 0, s, 0, 0)
+  const s = worldScale * dpr
+  ctx.setTransform(s, 0, 0, s, offsetX * dpr, offsetY * dpr)
   const w = WORLD_W
   const h = WORLD_H
 
   ctx.fillStyle = '#121510'
   ctx.fillRect(0, 0, w, h)
 
-  const lineW = Math.max(0.35, 1 / (scale * dpr))
+  const lineW = Math.max(0.35, 1 / (worldScale * dpr))
   ctx.strokeStyle = 'rgba(184, 201, 74, 0.08)'
   ctx.lineWidth = lineW
   const grid = 48
@@ -89,8 +95,8 @@ function paintPreview(): void {
   ctx.fillStyle = 'rgba(232, 234, 238, 0.55)'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
-  ctx.fillText('P1', player1.x * s - 4 * dpr, player1.y * s - 22 * dpr)
-  ctx.fillText('P2', player2.x * s - 4 * dpr, player2.y * s - 22 * dpr)
+  ctx.fillText('P1', (offsetX + player1.x * worldScale) * dpr - 4 * dpr, (offsetY + player1.y * worldScale) * dpr - 22 * dpr)
+  ctx.fillText('P2', (offsetX + player2.x * worldScale) * dpr - 4 * dpr, (offsetY + player2.y * worldScale) * dpr - 22 * dpr)
 }
 
 let ro: ResizeObserver | null = null

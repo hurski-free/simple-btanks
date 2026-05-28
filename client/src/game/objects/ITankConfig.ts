@@ -3,6 +3,8 @@ import type { TankModel } from '../models/TankModel'
 /** Gameplay parameters for a tank plus geometry for rendering. */
 export interface ITankConfig {
   hitPoints: number
+  /** Relative mass for collisions (higher = harder to push). */
+  mass: number
   gunDamage: number
   /** Forward acceleration (world units / s²). */
   forwardAccel: number

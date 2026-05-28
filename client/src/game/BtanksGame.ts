@@ -257,9 +257,135 @@ export abstract class BtanksGame {
     }
   }
 
+  /**
+   * Resolve overlap between two tanks, splitting penetration by inverse mass.
+   * Returns true when a collision was resolved.
+   */
+  protected resolveTankAgainstTank(a: Tank, b: Tank): boolean {
+    let ax = a.x
+    let ay = a.y
+    let bx = b.x
+    let by = b.y
+    let collided = false
+
+    for (let iter = 0; iter < 8; iter++) {
+      a.x = ax
+      a.y = ay
+      b.x = bx
+      b.y = by
+      const mtv = satMtvMoveAFromB(a.getCollisionWorldPolygon(), b.getCollisionWorldPolygon())
+      if (!mtv) break
+
+      collided = true
+      const mA = Math.max(0.05, a.config.mass)
+      const mB = Math.max(0.05, b.config.mass)
+      const invA = 1 / mA
+      const invB = 1 / mB
+      const invSum = invA + invB
+      const moveA = invA / invSum
+      const moveB = invB / invSum
+
+      ax += mtv.dx * moveA
+      ay += mtv.dy * moveA
+      bx -= mtv.dx * moveB
+      by -= mtv.dy * moveB
+
+      const len = Math.hypot(mtv.dx, mtv.dy)
+      if (len <= 1e-6) continue
+      const nx = mtv.dx / len
+      const ny = mtv.dy / len
+
+      const ahx = Math.cos(a.hullAngle)
+      const ahy = Math.sin(a.hullAngle)
+      const bhx = Math.cos(b.hullAngle)
+      const bhy = Math.sin(b.hullAngle)
+
+      const vax = ahx * a.forwardSpeed
+      const vay = ahy * a.forwardSpeed
+      const vbx = bhx * b.forwardSpeed
+      const vby = bhy * b.forwardSpeed
+      const vRelN = (vax - vbx) * nx + (vay - vby) * ny
+      if (vRelN < 0) {
+        const restitution = 0.08
+        const impulse = (-(1 + restitution) * vRelN) / invSum
+
+        const dvax = (impulse * invA) * nx
+        const dvay = (impulse * invA) * ny
+        const dvbx = (-impulse * invB) * nx
+        const dvby = (-impulse * invB) * ny
+
+        a.forwardSpeed += dvax * ahx + dvay * ahy
+        b.forwardSpeed += dvbx * bhx + dvby * bhy
+        this.clampTankForwardSpeed(a)
+        this.clampTankForwardSpeed(b)
+      } else {
+        const damp = 0.9
+        a.forwardSpeed *= damp
+        b.forwardSpeed *= damp
+      }
+    }
+
+    a.x = ax
+    a.y = ay
+    b.x = bx
+    b.y = by
+    return collided
+  }
+
+  /**
+   * Resolve collision by moving only `tank` away from `other` (useful when `other`
+   * is network-driven and should not be position-corrected locally).
+   */
+  protected resolveTankAgainstOtherTank(tank: Tank, other: Tank): boolean {
+    let tx = tank.x
+    let ty = tank.y
+    let collided = false
+
+    for (let iter = 0; iter < 8; iter++) {
+      tank.x = tx
+      tank.y = ty
+      const mtv = satMtvMoveAFromB(tank.getCollisionWorldPolygon(), other.getCollisionWorldPolygon())
+      if (!mtv) break
+
+      collided = true
+      tx += mtv.dx
+      ty += mtv.dy
+      tank.x = tx
+      tank.y = ty
+
+      const len = Math.hypot(mtv.dx, mtv.dy)
+      if (len <= 1e-6) continue
+      const nx = mtv.dx / len
+      const ny = mtv.dy / len
+      const hx = Math.cos(tank.hullAngle)
+      const hy = Math.sin(tank.hullAngle)
+      const ownVelN = (hx * tank.forwardSpeed) * nx + (hy * tank.forwardSpeed) * ny
+      if (ownVelN < -0.5) {
+        // Kill into-contact speed component to avoid "sticking and crawling" on hold-W.
+        tank.forwardSpeed = 0
+        tx += nx * 0.35
+        ty += ny * 0.35
+      } else {
+        tank.forwardSpeed *= 0.72
+        if (Math.abs(tank.forwardSpeed) < 4) tank.forwardSpeed = 0
+      }
+    }
+
+    tank.x = tx
+    tank.y = ty
+    return collided
+  }
+
   protected clampTankInWorld(tank: Tank, pad = 40): void {
     tank.x = Math.min(WORLD_W - pad, Math.max(pad, tank.x))
     tank.y = Math.min(WORLD_H - pad, Math.max(pad, tank.y))
+  }
+
+  private clampTankForwardSpeed(tank: Tank): void {
+    const vmaxF = tank.config.maxForwardSpeed
+    const vmaxB = tank.config.maxBackwardSpeed
+    if (tank.forwardSpeed > vmaxF) tank.forwardSpeed = vmaxF
+    if (tank.forwardSpeed < -vmaxB) tank.forwardSpeed = -vmaxB
   }
 
   protected updateExhaustSmoke(tanks: readonly Tank[], dtSec: number): void {

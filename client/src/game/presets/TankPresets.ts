@@ -191,6 +191,7 @@ const baseStats = {
 export const TankPresets = {
   lightTank: {
     hitPoints: 150,
+    mass: 0.85,
     gunDamage: 18,
     ...baseStats,
     model: TankModels.lightTank,
@@ -198,6 +199,7 @@ export const TankPresets = {
 
   mediumTank: {
     hitPoints: 240,
+    mass: 1.15,
     gunDamage: 28,
     ...baseStats,
     maxForwardSpeed: 130,
@@ -210,6 +212,7 @@ export const TankPresets = {
 
   heavyTank: {
     hitPoints: 320,
+    mass: 1.65,
     gunDamage: 40,
     forwardAccel: 110,
     backwardAccel: 85,
